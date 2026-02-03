@@ -45,7 +45,9 @@ function parseYad2Html(html) {
 
             // Extract link (used as unique ID - more stable than image URLs)
             const linkPath = item.find('a[class*="itemLink"]').attr('href') || '';
-            const url = linkPath.startsWith('/') ? YAD2_BASE_URL + linkPath.split('?')[0] : linkPath;
+            // Strip query parameters from all URLs to ensure stable IDs
+            const pathWithoutQuery = linkPath.split('?')[0];
+            const url = pathWithoutQuery.startsWith('/') ? YAD2_BASE_URL + pathWithoutQuery : pathWithoutQuery;
 
             // Skip items without a valid URL or duplicates
             if (!url || seenIds.has(url)) {
