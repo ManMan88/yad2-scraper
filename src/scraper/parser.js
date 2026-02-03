@@ -4,7 +4,7 @@ const YAD2_BASE_URL = 'https://www.yad2.co.il';
 
 /**
  * @typedef {Object} Listing
- * @property {string} id - Unique identifier (image URL)
+ * @property {string} id - Unique identifier (listing URL)
  * @property {string} url - Full URL to listing
  * @property {string} price - Price string
  * @property {string} street - Street address
@@ -43,18 +43,20 @@ function parseYad2Html(html) {
         $feedItemBoxes.each((_, elm) => {
             const item = $(elm);
 
-            // Extract image URL (used as unique ID)
-            const imageUrl = item.find('img[data-testid="image"]').attr('src')
-                || item.find('img[src*="img.yad2.co.il"]').attr('src');
-
-            if (!imageUrl || seenIds.has(imageUrl)) {
-                return; // Skip duplicates or items without images
-            }
-            seenIds.add(imageUrl);
-
-            // Extract link
+            // Extract link (used as unique ID - more stable than image URLs)
             const linkPath = item.find('a[class*="itemLink"]').attr('href') || '';
             const url = linkPath.startsWith('/') ? YAD2_BASE_URL + linkPath.split('?')[0] : linkPath;
+
+            // Skip items without a valid URL or duplicates
+            if (!url || seenIds.has(url)) {
+                return;
+            }
+            seenIds.add(url);
+
+            // Extract image URL
+            const imageUrl = item.find('img[data-testid="image"]').attr('src')
+                || item.find('img[src*="img.yad2.co.il"]').attr('src')
+                || '';
 
             // Extract listing details
             const price = item.find('[data-testid="price"]').text().trim();
@@ -63,7 +65,7 @@ function parseYad2Html(html) {
             const details = item.find('[data-testid="item-info-line-2nd"]').text().trim();
 
             listings.push({
-                id: imageUrl,
+                id: url,  // Use URL as stable unique ID
                 url,
                 price,
                 street,
