@@ -1,0 +1,10 @@
+{
+  "maxSavedItems": 500,
+  "projects": [
+    {
+      "topic": "Example Search",
+      "url": "https://www.yad2.co.il/realestate/forsale?minPrice=1000000&maxPrice=3000000",
+      "disabled": false
+    }
+  ]
+}

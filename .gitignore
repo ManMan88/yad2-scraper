@@ -4,3 +4,16 @@ node_modules
 localTests.js
 
 push_me
+
+# Environment variables (contains secrets)
+.env
+
+# User configuration and data (contains personal search preferences)
+config.json
+data/
+
+# Runtime directories (keep structure, ignore contents)
+logs/*
+!logs/.gitkeep
+pids/*
+!pids/.gitkeep

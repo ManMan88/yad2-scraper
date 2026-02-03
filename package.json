@@ -1,14 +1,27 @@
 {
   "name": "yad2-scraper",
-  "version": "1.0.0",
-  "main": "index.js",
+  "version": "2.0.0",
+  "main": "src/scraper/index.js",
   "author": "Niv Ezra",
   "license": "MIT",
+  "bin": {
+    "yad2": "./src/cli/index.js"
+  },
   "scripts": {
-    "scrape": "node scraper.js"
+    "scrape": "node src/scraper/index.js",
+    "cli": "node src/cli/index.js",
+    "start": "node src/cli/index.js start",
+    "stop": "node src/cli/index.js stop",
+    "list": "node src/cli/index.js list"
   },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
+    "cli-table3": "^0.6.5",
+    "commander": "^14.0.3",
+    "dotenv": "^17.2.3",
+    "puppeteer": "^24.36.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "telenode-js": "^1.1.5"
   }
 }
