@@ -58,12 +58,37 @@ async function notifyScanStart(topic, url) {
 
 /**
  * Notify new items found
+ * Splits into multiple messages if needed (Telegram has 4096 char limit)
  * @param {Array<string|Object>} newItems - Array of formatted strings or listing objects
  */
 async function notifyNewItems(newItems) {
-    const newItemsJoined = newItems.join('\n\n----------\n\n');
-    const msg = `${newItems.length} new listing${newItems.length === 1 ? '' : 's'}:\n\n${newItemsJoined}`;
-    await sendMessage(msg);
+    const MAX_MESSAGE_LENGTH = 4000; // Leave some buffer below 4096
+    const SEPARATOR = '\n\n----------\n\n';
+
+    // Send header first
+    await sendMessage(`${newItems.length} new listing${newItems.length === 1 ? '' : 's'}:`);
+
+    // Build messages in chunks that fit within limit
+    let currentMessage = '';
+
+    for (const item of newItems) {
+        const itemText = currentMessage ? SEPARATOR + item : item;
+
+        if (currentMessage.length + itemText.length > MAX_MESSAGE_LENGTH) {
+            // Send current chunk and start new one
+            if (currentMessage) {
+                await sendMessage(currentMessage);
+            }
+            currentMessage = item;
+        } else {
+            currentMessage += itemText;
+        }
+    }
+
+    // Send remaining items
+    if (currentMessage) {
+        await sendMessage(currentMessage);
+    }
 }
 
 /**
