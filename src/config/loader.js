@@ -13,10 +13,19 @@ function loadConfig() {
         fileConfig = require(CONFIG_PATH);
     }
 
+    // Parse chat IDs - support comma-separated list for multiple recipients
+    const chatIdEnv = process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || '';
+    const chatIdConfig = fileConfig.chatId || '';
+    const chatIdSource = chatIdEnv || chatIdConfig;
+    const chatIds = chatIdSource
+        ? chatIdSource.split(',').map(id => id.trim()).filter(id => id)
+        : [];
+
     return {
         // Telegram settings - env vars take precedence
         telegramApiToken: process.env.TELEGRAM_API_TOKEN || process.env.API_TOKEN || fileConfig.telegramApiToken,
-        chatId: process.env.TELEGRAM_CHAT_ID || process.env.CHAT_ID || fileConfig.chatId,
+        chatId: chatIds[0] || null,  // Primary chat ID (backward compatible)
+        chatIds: chatIds,             // All chat IDs for multiple recipients
 
         // Scraper settings
         maxSavedItems: fileConfig.maxSavedItems || 500,

@@ -18,16 +18,35 @@ function getTelenode() {
 }
 
 /**
- * Send a text message via Telegram
+ * Send a text message to all configured recipients
  */
 async function sendMessage(message) {
     const config = loadConfig();
-    if (!config.chatId) {
-        throw new Error('Telegram chat ID not configured. Set TELEGRAM_CHAT_ID in .env');
+    const chatIds = config.chatIds || [];
+
+    if (chatIds.length === 0) {
+        throw new Error('No Telegram chat IDs configured. Set TELEGRAM_CHAT_ID in .env');
     }
 
     const telenode = getTelenode();
-    await telenode.sendTextMessage(message, config.chatId);
+
+    // Send to all recipients
+    const results = await Promise.allSettled(
+        chatIds.map(chatId => telenode.sendTextMessage(message, chatId))
+    );
+
+    // Log any failures
+    results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+            console.error(`[Notifier] Failed to send to ${chatIds[index]}: ${result.reason}`);
+        }
+    });
+
+    // Throw if all failed
+    const allFailed = results.every(r => r.status === 'rejected');
+    if (allFailed) {
+        throw new Error('Failed to send message to any recipient');
+    }
 }
 
 /**
