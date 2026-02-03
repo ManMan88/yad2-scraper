@@ -1,5 +1,5 @@
 const { getYad2Response } = require('./fetcher');
-const { parseYad2Html } = require('./parser');
+const { parseYad2Html, formatListing } = require('./parser');
 const { notifyScanStart, notifyNewItems, notifyNoNewItems, notifyScanFailed } = require('./notifier');
 const { checkAndUpdateItems, createPushFlag } = require('./storage');
 const { getEnabledProjects, getProject } = require('../config/loader');
@@ -23,19 +23,27 @@ async function scrape(topic, url, options = {}) {
         const html = await getYad2Response(url);
 
         console.log(`[Scraper] Parsing ${topic}...`);
-        const imageUrls = parseYad2Html(html);
-        console.log(`[Scraper] Found ${imageUrls.length} items on page`);
+        const listings = parseYad2Html(html);
+        console.log(`[Scraper] Found ${listings.length} items on page`);
 
-        const { newItems, hasChanges } = checkAndUpdateItems(imageUrls, topic);
+        // Extract IDs (image URLs) for storage comparison
+        const currentIds = listings.map(l => l.id);
+
+        // Check which IDs are new
+        const { newItems: newIds, hasChanges } = checkAndUpdateItems(currentIds, topic);
 
         if (hasChanges) {
             createPushFlag();
         }
 
-        if (newItems.length > 0) {
-            console.log(`[Scraper] ${newItems.length} new items found!`);
+        if (newIds.length > 0) {
+            console.log(`[Scraper] ${newIds.length} new items found!`);
             if (!silent) {
-                await notifyNewItems(newItems);
+                // Find the full listing objects for new items and format them
+                const newIdSet = new Set(newIds);
+                const newListings = listings.filter(l => newIdSet.has(l.id));
+                const formattedListings = newListings.map(formatListing);
+                await notifyNewItems(formattedListings);
             }
         } else {
             console.log(`[Scraper] No new items`);
@@ -44,7 +52,7 @@ async function scrape(topic, url, options = {}) {
             }
         }
 
-        return { success: true, newItems, total: imageUrls.length };
+        return { success: true, newItems: newIds, total: listings.length };
     } catch (error) {
         console.error(`[Scraper] Error scraping ${topic}:`, error.message);
         if (!silent) {

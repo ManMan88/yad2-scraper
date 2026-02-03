@@ -58,10 +58,11 @@ async function notifyScanStart(topic, url) {
 
 /**
  * Notify new items found
+ * @param {Array<string|Object>} newItems - Array of formatted strings or listing objects
  */
 async function notifyNewItems(newItems) {
-    const newItemsJoined = newItems.join('\n----------\n');
-    const msg = `${newItems.length} new items:\n${newItemsJoined}`;
+    const newItemsJoined = newItems.join('\n\n----------\n\n');
+    const msg = `${newItems.length} new listing${newItems.length === 1 ? '' : 's'}:\n\n${newItemsJoined}`;
     await sendMessage(msg);
 }
 

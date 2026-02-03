@@ -1,9 +1,22 @@
 const cheerio = require('cheerio');
 
+const YAD2_BASE_URL = 'https://www.yad2.co.il';
+
 /**
- * Parse Yad2 HTML and extract image URLs as item identifiers
+ * @typedef {Object} Listing
+ * @property {string} id - Unique identifier (image URL)
+ * @property {string} url - Full URL to listing
+ * @property {string} price - Price string
+ * @property {string} street - Street address
+ * @property {string} city - City/neighborhood info
+ * @property {string} details - Rooms, floor, sqm
+ * @property {string} imageUrl - Image URL
+ */
+
+/**
+ * Parse Yad2 HTML and extract listing details
  * @param {string} html - Raw HTML from Yad2
- * @returns {string[]} Array of image URLs
+ * @returns {Listing[]} Array of listing objects
  * @throws {Error} If bot detection is triggered or parsing fails
  */
 function parseYad2Html(html) {
@@ -19,63 +32,76 @@ function parseYad2Html(html) {
         throw new Error('Bot detection triggered - ShieldSquare Captcha');
     }
 
-    const imageUrls = [];
+    const listings = [];
+    const seenIds = new Set();
 
-    // Strategy 1: New Yad2 structure (2024+) - feedItemBox containers
+    // New Yad2 structure (2024+) - feedItemBox containers
     const $feedItemBoxes = $('[class*="feedItemBox"]');
     if ($feedItemBoxes.length > 0) {
         console.log(`[Parser] Found ${$feedItemBoxes.length} feedItemBox elements`);
+
         $feedItemBoxes.each((_, elm) => {
-            // Find Yad2 images within each item
-            $(elm).find('img').each((_, img) => {
-                const imgSrc = $(img).attr('src');
-                if (imgSrc && imgSrc.includes('img.yad2.co.il')) {
-                    imageUrls.push(imgSrc);
-                }
+            const item = $(elm);
+
+            // Extract image URL (used as unique ID)
+            const imageUrl = item.find('img[data-testid="image"]').attr('src')
+                || item.find('img[src*="img.yad2.co.il"]').attr('src');
+
+            if (!imageUrl || seenIds.has(imageUrl)) {
+                return; // Skip duplicates or items without images
+            }
+            seenIds.add(imageUrl);
+
+            // Extract link
+            const linkPath = item.find('a[class*="itemLink"]').attr('href') || '';
+            const url = linkPath.startsWith('/') ? YAD2_BASE_URL + linkPath.split('?')[0] : linkPath;
+
+            // Extract listing details
+            const price = item.find('[data-testid="price"]').text().trim();
+            const street = item.find('[data-testid="street-name"]').text().trim();
+            const city = item.find('[data-testid="item-info-line-1st"]').text().trim();
+            const details = item.find('[data-testid="item-info-line-2nd"]').text().trim();
+
+            listings.push({
+                id: imageUrl,
+                url,
+                price,
+                street,
+                city,
+                details,
+                imageUrl,
             });
         });
-        if (imageUrls.length > 0) {
-            return [...new Set(imageUrls)]; // Remove duplicates
+
+        if (listings.length > 0) {
+            return listings;
         }
     }
 
-    // Strategy 2: Look for Yad2 image URLs directly
+    // Fallback: Look for Yad2 image URLs directly (legacy support)
+    const imageUrls = [];
     $('img').each((_, elm) => {
         const imgSrc = $(elm).attr('src');
         if (imgSrc && imgSrc.includes('img.yad2.co.il') && !imgSrc.includes('logo')) {
-            imageUrls.push(imgSrc);
+            if (!seenIds.has(imgSrc)) {
+                seenIds.add(imgSrc);
+                imageUrls.push(imgSrc);
+            }
         }
     });
 
     if (imageUrls.length > 0) {
-        console.log(`[Parser] Found ${imageUrls.length} Yad2 images via direct search`);
-        return [...new Set(imageUrls)]; // Remove duplicates
-    }
-
-    // Strategy 3: Legacy selectors (pre-2024)
-    const $feedItems = $('.feeditem').find('.pic');
-    if ($feedItems && $feedItems.length > 0) {
-        console.log(`[Parser] Found ${$feedItems.length} legacy feeditem elements`);
-        $feedItems.each((_, elm) => {
-            const imgSrc = $(elm).find('img').attr('src');
-            if (imgSrc) {
-                imageUrls.push(imgSrc);
-            }
-        });
-        return imageUrls;
-    }
-
-    // Strategy 4: Alternative legacy selector
-    const $altItems = $('[class*="feeditem"]').find('img');
-    if ($altItems.length > 0) {
-        console.log(`[Parser] Found ${$altItems.length} alternative feeditem images`);
-        $altItems.each((_, elm) => {
-            const imgSrc = $(elm).attr('src');
-            if (imgSrc && !imgSrc.includes('placeholder')) {
-                imageUrls.push(imgSrc);
-            }
-        });
-        return imageUrls;
+        console.log(`[Parser] Found ${imageUrls.length} Yad2 images via fallback`);
+        // Return minimal listing objects for backward compatibility
+        return imageUrls.map(imageUrl => ({
+            id: imageUrl,
+            url: '',
+            price: '',
+            street: '',
+            city: '',
+            details: '',
+            imageUrl,
+        }));
     }
 
     console.warn('[Parser] No feed items found - page structure may have changed');
@@ -83,13 +109,53 @@ function parseYad2Html(html) {
 }
 
 /**
- * Scrape Yad2 URL and extract image URLs
+ * Extract just image URLs from listings (for backward compatibility)
+ * @param {string} html - Raw HTML from Yad2
+ * @returns {string[]} Array of image URLs
  */
-async function scrapeItemsAndExtractImgUrls(html) {
-    return parseYad2Html(html);
+function scrapeItemsAndExtractImgUrls(html) {
+    const listings = parseYad2Html(html);
+    return listings.map(l => l.id);
+}
+
+/**
+ * Format a listing for display in Telegram
+ * @param {Listing} listing
+ * @returns {string}
+ */
+function formatListing(listing) {
+    const parts = [];
+
+    if (listing.price) {
+        parts.push(listing.price);
+    }
+
+    if (listing.street) {
+        parts.push(listing.street);
+    }
+
+    if (listing.city) {
+        parts.push(listing.city);
+    }
+
+    if (listing.details) {
+        parts.push(listing.details);
+    }
+
+    if (listing.url) {
+        parts.push(listing.url);
+    }
+
+    // Fallback to just image URL if no other data
+    if (parts.length === 0) {
+        return listing.imageUrl;
+    }
+
+    return parts.join('\n');
 }
 
 module.exports = {
     parseYad2Html,
     scrapeItemsAndExtractImgUrls,
+    formatListing,
 };
