@@ -60,41 +60,35 @@ function saveUrls(topic, urls) {
 
 /**
  * Check for new items and update storage
- * @param {string[]} currentUrls - URLs from current scrape
+ * Keeps listings in history even after they disappear from the page
+ * to prevent re-notifications when they reappear
+ * @param {string[]} currentIds - IDs from current scrape
  * @param {string} topic - Topic name
  * @returns {{newItems: string[], hasChanges: boolean}}
  */
-function checkAndUpdateItems(currentUrls, topic) {
+function checkAndUpdateItems(currentIds, topic) {
     const config = loadConfig();
-    let savedUrls = loadSavedUrls(topic);
-    const originalLength = savedUrls.length;
+    const savedIds = loadSavedUrls(topic);
+    const savedSet = new Set(savedIds);
 
-    // Remove URLs that are no longer in the current scrape (items removed from Yad2)
-    savedUrls = savedUrls.filter(savedUrl => currentUrls.includes(savedUrl));
-    const removedCount = originalLength - savedUrls.length;
+    // Find new items (on page but not in history)
+    const newItems = currentIds.filter(id => !savedSet.has(id));
 
-    // Find new items
-    const newItems = [];
-    for (const url of currentUrls) {
-        if (!savedUrls.includes(url)) {
-            savedUrls.push(url);
-            newItems.push(url);
-        }
-    }
+    // Add new items to history (keep old ones even if not on current page)
+    let updatedIds = [...savedIds, ...newItems];
 
     // Enforce maxSavedItems limit - keep most recent items
-    if (savedUrls.length > config.maxSavedItems) {
-        const excess = savedUrls.length - config.maxSavedItems;
-        savedUrls = savedUrls.slice(excess);
+    if (updatedIds.length > config.maxSavedItems) {
+        const excess = updatedIds.length - config.maxSavedItems;
+        updatedIds = updatedIds.slice(excess);
         console.log(`[Storage] Trimmed ${excess} old items to maintain limit of ${config.maxSavedItems}`);
     }
 
-    // Determine if we need to save
-    const hasChanges = removedCount > 0 || newItems.length > 0;
+    const hasChanges = newItems.length > 0;
 
     if (hasChanges) {
-        saveUrls(topic, savedUrls);
-        console.log(`[Storage] Updated ${topic}: +${newItems.length} new, -${removedCount} removed, ${savedUrls.length} total`);
+        saveUrls(topic, updatedIds);
+        console.log(`[Storage] Updated ${topic}: +${newItems.length} new, ${updatedIds.length} total in history`);
     }
 
     return { newItems, hasChanges };
