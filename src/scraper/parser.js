@@ -43,17 +43,23 @@ function parseYad2Html(html) {
         $feedItemBoxes.each((_, elm) => {
             const item = $(elm);
 
-            // Extract link (used as unique ID - more stable than image URLs)
+            // Extract link
             const linkPath = item.find('a[class*="itemLink"]').attr('href') || '';
-            // Strip query parameters from all URLs to ensure stable IDs
+            // Strip query parameters
             const pathWithoutQuery = linkPath.split('?')[0];
             const url = pathWithoutQuery.startsWith('/') ? YAD2_BASE_URL + pathWithoutQuery : pathWithoutQuery;
 
-            // Skip items without a valid URL or duplicates
-            if (!url || seenIds.has(url)) {
+            // Extract stable listing ID from URL
+            // Yad2 URLs vary between /realestate/item/xxx and /realestate/item/tel-aviv-area/xxx
+            // Use the last path segment as the stable unique ID
+            const pathSegments = pathWithoutQuery.replace(/^https?:\/\/[^/]+/, '').split('/').filter(Boolean);
+            const listingId = pathSegments[pathSegments.length - 1] || '';
+
+            // Skip items without a valid ID or duplicates
+            if (!listingId || seenIds.has(listingId)) {
                 return;
             }
-            seenIds.add(url);
+            seenIds.add(listingId);
 
             // Extract image URL
             const imageUrl = item.find('img[data-testid="image"]').attr('src')
@@ -67,7 +73,7 @@ function parseYad2Html(html) {
             const details = item.find('[data-testid="item-info-line-2nd"]').text().trim();
 
             listings.push({
-                id: url,  // Use URL as stable unique ID
+                id: listingId,  // Use listing ID as stable unique identifier
                 url,
                 price,
                 street,
