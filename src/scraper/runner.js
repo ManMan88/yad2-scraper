@@ -81,7 +81,7 @@ async function runScrape() {
                     const hours = Math.floor(timeSinceLastAd / (60 * 60 * 1000));
                     log(`No new ads for ${hours} hours, sending quiet alert`);
                     try {
-                        await sendMessage(`Still watching "${topic}" - no new listings in the last ${hours} hours.`);
+                        await sendMessage(`Starting scanning ${topic} on link:\n${project.url}\n\nStill watching - no new listings in the last ${hours} hours.`);
                         // Reset timer so next alert fires in another 6 hours
                         lastNewAdTime = Date.now();
                     } catch (error) {
