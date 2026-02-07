@@ -1,6 +1,6 @@
 const { getYad2Response } = require('./fetcher');
 const { parseYad2Html, formatListing } = require('./parser');
-const { notifyScanStart, notifyNewItems, notifyNoNewItems, notifyScanFailed } = require('./notifier');
+const { notifyScanStart, notifyNewItems, notifyScanFailed } = require('./notifier');
 const { checkAndUpdateItems, createPushFlag } = require('./storage');
 const { getEnabledProjects, getProject } = require('../config/loader');
 
@@ -47,9 +47,6 @@ async function scrape(topic, url, options = {}) {
             }
         } else {
             console.log(`[Scraper] No new items`);
-            if (!silent) {
-                await notifyNoNewItems();
-            }
         }
 
         return { success: true, newItems: newIds, total: listings.length };

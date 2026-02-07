@@ -9,6 +9,7 @@ const { Command } = require('commander');
 const { scrapeByTopic } = require('./index');
 const { getProject } = require('../config/loader');
 const { closeBrowser } = require('./fetcher');
+const { sendMessage } = require('./notifier');
 
 const program = new Command();
 
@@ -28,6 +29,8 @@ const topic = options.topic;
 const intervalMinutes = parseInt(options.interval, 10);
 const intervalMs = intervalMinutes * 60 * 1000;
 
+const QUIET_ALERT_MS = 6 * 60 * 60 * 1000; // 6 hours
+
 // Verify topic exists
 const project = getProject(topic);
 if (!project) {
@@ -42,6 +45,9 @@ if (project.disabled) {
 
 let intervalId = null;
 let isShuttingDown = false;
+
+// Track when we last saw new ads (initialized to now so the 6h timer starts from startup)
+let lastNewAdTime = Date.now();
 
 /**
  * Log with timestamp
@@ -64,6 +70,25 @@ async function runScrape() {
 
         if (result.success) {
             log(`Completed: ${result.newItems.length} new items (${result.total} total)`);
+
+            if (result.newItems.length > 0) {
+                // New ads found - reset the quiet alert timer
+                lastNewAdTime = Date.now();
+            } else {
+                // No new ads - check if we should send a quiet alert
+                const timeSinceLastAd = Date.now() - lastNewAdTime;
+                if (timeSinceLastAd >= QUIET_ALERT_MS) {
+                    const hours = Math.floor(timeSinceLastAd / (60 * 60 * 1000));
+                    log(`No new ads for ${hours} hours, sending quiet alert`);
+                    try {
+                        await sendMessage(`Still watching "${topic}" - no new listings in the last ${hours} hours.`);
+                        // Reset timer so next alert fires in another 6 hours
+                        lastNewAdTime = Date.now();
+                    } catch (error) {
+                        log(`Failed to send quiet alert: ${error.message}`);
+                    }
+                }
+            }
         } else if (result.skipped) {
             log(`Skipped: topic is disabled`);
         }
@@ -112,6 +137,7 @@ process.on('unhandledRejection', (reason, promise) => {
 async function main() {
     log(`Starting scraper for: ${topic}`);
     log(`Interval: ${intervalMinutes} minutes`);
+    log(`Quiet alert after: 6 hours of no new ads`);
     log(`URL: ${project.url}`);
     log('---');
 
