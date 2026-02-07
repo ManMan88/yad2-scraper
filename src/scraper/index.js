@@ -15,10 +15,6 @@ async function scrape(topic, url, options = {}) {
     const { silent = false } = options;
 
     try {
-        if (!silent) {
-            await notifyScanStart(topic, url);
-        }
-
         console.log(`[Scraper] Fetching ${topic}...`);
         const html = await getYad2Response(url);
 
@@ -39,6 +35,7 @@ async function scrape(topic, url, options = {}) {
         if (newIds.length > 0) {
             console.log(`[Scraper] ${newIds.length} new items found!`);
             if (!silent) {
+                await notifyScanStart(topic, url);
                 // Find the full listing objects for new items and format them
                 const newIdSet = new Set(newIds);
                 const newListings = listings.filter(l => newIdSet.has(l.id));
