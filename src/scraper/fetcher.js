@@ -5,8 +5,39 @@ const { loadConfig } = require('../config/loader');
 // Enable stealth plugin to bypass bot detection
 puppeteer.use(StealthPlugin());
 
-// Singleton browser instance
+// Browser instance and usage counter
 let browser = null;
+let browserUseCount = 0;
+const MAX_BROWSER_USES = 3; // Restart browser every N scrapes to clear fingerprinting state
+
+// Pool of realistic User-Agent strings (modern Chrome on different OSes)
+const USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0',
+];
+
+// Realistic viewport sizes (common desktop resolutions)
+const VIEWPORTS = [
+    { width: 1920, height: 1080 },
+    { width: 1536, height: 864 },
+    { width: 1440, height: 900 },
+    { width: 1366, height: 768 },
+    { width: 1680, height: 1050 },
+    { width: 2560, height: 1440 },
+];
+
+function randomItem(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomBetween(min, max) {
+    return min + Math.random() * (max - min);
+}
 
 /**
  * Sleep for a given number of milliseconds
@@ -16,23 +47,45 @@ function sleep(ms) {
 }
 
 /**
- * Get or create browser instance
+ * Get or create browser instance, rotating after MAX_BROWSER_USES
  */
 async function getBrowser() {
-    if (!browser || !browser.isConnected()) {
-        console.log('[Fetcher] Launching browser...');
-        browser = await puppeteer.launch({
-            headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu',
-                '--window-size=1920,1080',
-            ],
-        });
+    if (browser && browser.isConnected() && browserUseCount < MAX_BROWSER_USES) {
+        return browser;
     }
+
+    // Close old browser if it exists
+    if (browser) {
+        console.log(`[Fetcher] Recycling browser after ${browserUseCount} uses...`);
+        try {
+            await browser.close();
+        } catch (e) {
+            // Ignore close errors
+        }
+        browser = null;
+    }
+
+    const viewport = randomItem(VIEWPORTS);
+
+    console.log('[Fetcher] Launching browser...');
+    browser = await puppeteer.launch({
+        headless: 'new',
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu',
+            `--window-size=${viewport.width},${viewport.height}`,
+            // Reduce automation detection surface
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-infobars',
+            '--lang=he-IL,he',
+        ],
+    });
+    browserUseCount = 0;
+
     return browser;
 }
 
@@ -48,6 +101,35 @@ async function closeBrowser() {
             // Ignore close errors
         }
         browser = null;
+        browserUseCount = 0;
+    }
+}
+
+/**
+ * Simulate realistic mouse movements on a page
+ */
+async function simulateHumanBehavior(page, viewport) {
+    // Move mouse to a random position (as if looking around)
+    const x1 = randomBetween(100, viewport.width - 100);
+    const y1 = randomBetween(100, viewport.height - 100);
+    await page.mouse.move(x1, y1, { steps: Math.floor(randomBetween(5, 15)) });
+    await sleep(randomBetween(200, 600));
+
+    // Scroll down in a few steps with variable amounts (like a human scanning listings)
+    const scrollSteps = Math.floor(randomBetween(2, 5));
+    for (let i = 0; i < scrollSteps; i++) {
+        const scrollAmount = Math.floor(randomBetween(200, 600));
+        await page.evaluate((amount) => {
+            window.scrollBy({ top: amount, behavior: 'smooth' });
+        }, scrollAmount);
+        await sleep(randomBetween(400, 1200));
+
+        // Occasionally move the mouse while scrolling
+        if (Math.random() > 0.5) {
+            const mx = randomBetween(200, viewport.width - 200);
+            const my = randomBetween(100, viewport.height - 100);
+            await page.mouse.move(mx, my, { steps: Math.floor(randomBetween(3, 10)) });
+        }
     }
 }
 
@@ -67,17 +149,44 @@ async function getYad2ResponsePuppeteer(url) {
                 const backoffMs = 2000 * Math.pow(2, attempt - 1);
                 console.log(`[Fetcher] Retry ${attempt}/${maxRetries}, waiting ${backoffMs}ms...`);
                 await sleep(backoffMs);
+
+                // On retry, force a fresh browser to get a clean fingerprint
+                await closeBrowser();
             }
 
-            const browser = await getBrowser();
-            page = await browser.newPage();
+            const browserInstance = await getBrowser();
+            page = await browserInstance.newPage();
 
-            // Set realistic viewport
-            await page.setViewport({ width: 1920, height: 1080 });
+            // Randomize viewport
+            const viewport = randomItem(VIEWPORTS);
+            await page.setViewport({
+                width: viewport.width,
+                height: viewport.height,
+                deviceScaleFactor: Math.random() > 0.5 ? 2 : 1,
+            });
+
+            // Set a rotated User-Agent
+            const userAgent = randomItem(USER_AGENTS);
+            await page.setUserAgent(userAgent);
 
             // Set extra headers to appear more human
             await page.setExtraHTTPHeaders({
                 'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'sec-ch-ua-platform': '"Windows"',
+            });
+
+            // Override webdriver property
+            await page.evaluateOnNewDocument(() => {
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                // Add realistic plugins count
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5],
+                });
+                // Add realistic language
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['he-IL', 'he', 'en-US', 'en'],
+                });
             });
 
             console.log(`[Fetcher] Navigating to page (attempt ${attempt})...`);
@@ -88,19 +197,18 @@ async function getYad2ResponsePuppeteer(url) {
                 timeout: 30000,
             });
 
-            // Random delay to appear more human (2-5 seconds)
-            const humanDelay = 2000 + Math.random() * 3000;
+            // Random delay to appear more human (3-7 seconds)
+            const humanDelay = randomBetween(3000, 7000);
             console.log(`[Fetcher] Waiting ${Math.round(humanDelay)}ms...`);
             await sleep(humanDelay);
 
-            // Scroll down a bit to trigger lazy loading
-            await page.evaluate(() => {
-                window.scrollBy(0, 500);
-            });
-            await sleep(1000);
+            // Simulate realistic human behavior
+            await simulateHumanBehavior(page, viewport);
+            await sleep(randomBetween(500, 1500));
 
             const html = await page.content();
             await page.close();
+            browserUseCount++;
 
             console.log('[Fetcher] Page fetched successfully');
             return html;
@@ -142,7 +250,7 @@ async function fetchWithRetry(url, options = {}) {
                 method: 'GET',
                 redirect: 'follow',
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'User-Agent': randomItem(USER_AGENTS),
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
                 },
