@@ -15,7 +15,7 @@ const program = new Command();
 
 program
     .option('--topic <topic>', 'Topic to scrape (required)')
-    .option('--interval <minutes>', 'Interval between scrapes in minutes', '15')
+    .option('--interval <minutes>', 'Interval between scrapes in minutes', '20')
     .parse();
 
 const options = program.opts();
@@ -28,6 +28,8 @@ if (!options.topic) {
 const topic = options.topic;
 const intervalMinutes = parseInt(options.interval, 10);
 const intervalMs = intervalMinutes * 60 * 1000;
+// Jitter: +/- 30% of interval to avoid all scrapers hitting at the same time
+const JITTER_FACTOR = 0.3;
 
 const QUIET_ALERT_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -43,7 +45,7 @@ if (project.disabled) {
     process.exit(1);
 }
 
-let intervalId = null;
+let scheduleTimeout = null;
 let isShuttingDown = false;
 
 // Track when we last saw new ads (initialized to now so the 6h timer starts from startup)
@@ -55,6 +57,28 @@ let lastNewAdTime = Date.now();
 function log(message) {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] ${message}`);
+}
+
+/**
+ * Get next interval with random jitter
+ */
+function getJitteredInterval() {
+    const jitter = intervalMs * JITTER_FACTOR;
+    return intervalMs + (Math.random() * 2 - 1) * jitter;
+}
+
+/**
+ * Schedule the next scrape with jitter
+ */
+function scheduleNext() {
+    if (isShuttingDown) return;
+    const nextMs = getJitteredInterval();
+    const nextMin = (nextMs / 60000).toFixed(1);
+    log(`Next scrape in ${nextMin} minutes`);
+    scheduleTimeout = setTimeout(async () => {
+        await runScrape();
+        scheduleNext();
+    }, nextMs);
 }
 
 /**
@@ -94,6 +118,12 @@ async function runScrape() {
         }
     } catch (error) {
         log(`Error: ${error.message}`);
+
+        // On captcha/bot detection, restart browser to get a clean fingerprint
+        if (error.message && error.message.includes('ShieldSquare Captcha')) {
+            log('Bot detection triggered - restarting browser for clean fingerprint');
+            await closeBrowser();
+        }
     }
 }
 
@@ -106,8 +136,8 @@ async function shutdown(signal) {
 
     log(`Received ${signal}, shutting down gracefully...`);
 
-    if (intervalId) {
-        clearInterval(intervalId);
+    if (scheduleTimeout) {
+        clearTimeout(scheduleTimeout);
     }
 
     // Close browser instance
@@ -144,10 +174,8 @@ async function main() {
     // Run immediately
     await runScrape();
 
-    // Then run on interval
-    intervalId = setInterval(runScrape, intervalMs);
-
-    log(`Next scrape in ${intervalMinutes} minutes`);
+    // Schedule next scrape with jitter
+    scheduleNext();
 }
 
 main().catch(error => {

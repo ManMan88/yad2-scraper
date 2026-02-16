@@ -25,7 +25,7 @@ program
 program
     .command('start [topic]')
     .description('Start scraper(s) as background process')
-    .option('-i, --interval <minutes>', 'Scrape interval in minutes', '15')
+    .option('-i, --interval <minutes>', 'Scrape interval in minutes', '20')
     .option('-f, --foreground', 'Run in foreground (don\'t detach)')
     .option('-a, --all', 'Start all enabled scrapers')
     .action((topic, options) => {
