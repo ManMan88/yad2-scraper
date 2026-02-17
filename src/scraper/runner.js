@@ -171,7 +171,16 @@ async function main() {
     log(`URL: ${project.url}`);
     log('---');
 
-    // Run immediately
+    // Add random initial delay (0-3 minutes) so multiple scrapers
+    // started at the same time don't all hit Yad2 simultaneously
+    const initialDelayMs = Math.random() * 3 * 60 * 1000;
+    const initialDelaySec = Math.round(initialDelayMs / 1000);
+    if (initialDelaySec > 0) {
+        log(`Staggering start by ${initialDelaySec}s to avoid simultaneous requests`);
+        await new Promise(resolve => setTimeout(resolve, initialDelayMs));
+    }
+
+    // Run first scrape
     await runScrape();
 
     // Schedule next scrape with jitter
