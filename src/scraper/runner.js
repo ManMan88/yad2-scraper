@@ -68,21 +68,22 @@ function getJitteredInterval() {
 }
 
 /**
- * Schedule the next scrape with jitter
+ * Schedule the next scrape with jitter, or with a custom delay (e.g. after captcha)
  */
-function scheduleNext() {
+function scheduleNext(overrideMs) {
     if (isShuttingDown) return;
-    const nextMs = getJitteredInterval();
+    const nextMs = overrideMs || getJitteredInterval();
     const nextMin = (nextMs / 60000).toFixed(1);
     log(`Next scrape in ${nextMin} minutes`);
     scheduleTimeout = setTimeout(async () => {
-        await runScrape();
-        scheduleNext();
+        const cooldownMs = await runScrape();
+        scheduleNext(cooldownMs);
     }, nextMs);
 }
 
 /**
  * Run a single scrape iteration
+ * @returns {number|undefined} Optional override delay in ms for next scrape (e.g. after captcha)
  */
 async function runScrape() {
     if (isShuttingDown) return;
@@ -119,10 +120,13 @@ async function runScrape() {
     } catch (error) {
         log(`Error: ${error.message}`);
 
-        // On captcha/bot detection, restart browser to get a clean fingerprint
+        // On captcha/bot detection, restart browser and apply extra cooldown
         if (error.message && error.message.includes('ShieldSquare Captcha')) {
             log('Bot detection triggered - restarting browser for clean fingerprint');
             await closeBrowser();
+            const cooldownMs = intervalMs * 2;
+            log(`Applying captcha cooldown (2x interval)`);
+            return cooldownMs;
         }
     }
 }
@@ -171,9 +175,9 @@ async function main() {
     log(`URL: ${project.url}`);
     log('---');
 
-    // Add random initial delay (0-3 minutes) so multiple scrapers
+    // Add random initial delay (0-5 minutes) so multiple scrapers
     // started at the same time don't all hit Yad2 simultaneously
-    const initialDelayMs = Math.random() * 3 * 60 * 1000;
+    const initialDelayMs = Math.random() * 5 * 60 * 1000;
     const initialDelaySec = Math.round(initialDelayMs / 1000);
     if (initialDelaySec > 0) {
         log(`Staggering start by ${initialDelaySec}s to avoid simultaneous requests`);

@@ -8,17 +8,13 @@ puppeteer.use(StealthPlugin());
 // Browser instance and usage counter
 let browser = null;
 let browserUseCount = 0;
-const MAX_BROWSER_USES = 3; // Restart browser every N scrapes to clear fingerprinting state
+const MAX_BROWSER_USES = 8; // Restart browser every N scrapes (higher = more session history like a real user)
 
-// Pool of realistic User-Agent strings (modern Chrome on different OSes)
+// Pool of realistic User-Agent strings (Linux Chrome matching installed browser)
 const USER_AGENTS = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
 ];
 
 // Realistic viewport sizes (common desktop resolutions)
@@ -169,25 +165,20 @@ async function getYad2ResponsePuppeteer(url) {
             const userAgent = randomItem(USER_AGENTS);
             await page.setUserAgent(userAgent);
 
-            // Set extra headers to appear more human
+            // Build Client Hints headers that match the selected User-Agent
+            const chromeMatch = userAgent.match(/Chrome\/([\d]+)/);
+            const majorVersion = chromeMatch ? chromeMatch[1] : '144';
+
             await page.setExtraHTTPHeaders({
                 'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'sec-ch-ua-platform': '"Windows"',
+                'sec-ch-ua': `"Chromium";v="${majorVersion}", "Google Chrome";v="${majorVersion}", "Not-A.Brand";v="99"`,
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Linux"',
             });
 
-            // Override webdriver property
-            await page.evaluateOnNewDocument(() => {
-                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                // Add realistic plugins count
-                Object.defineProperty(navigator, 'plugins', {
-                    get: () => [1, 2, 3, 4, 5],
-                });
-                // Add realistic language
-                Object.defineProperty(navigator, 'languages', {
-                    get: () => ['he-IL', 'he', 'en-US', 'en'],
-                });
-            });
+            // Note: navigator.webdriver, navigator.plugins, and navigator.languages
+            // are all handled by puppeteer-extra-plugin-stealth — no manual overrides needed
 
             console.log(`[Fetcher] Navigating to page (attempt ${attempt})...`);
 
