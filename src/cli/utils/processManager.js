@@ -90,16 +90,21 @@ function getPid(topic) {
     return parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
 }
 
+// Seconds between each scraper when starting multiple scrapers
+const STAGGER_STEP_SECONDS = 180; // 3 minutes
+
 /**
  * Start a scraper for a topic
  * @param {string} topic - Topic name
  * @param {Object} options - Options
  * @param {number} options.interval - Interval in minutes (default: 15)
  * @param {boolean} options.foreground - Run in foreground (don't detach)
+ * @param {number} options.staggerIndex - Index for initial stagger (0, 1, 2...) — delay = index * 180s
  * @returns {number} PID of the spawned process
  */
 function startScraper(topic, options = {}) {
-    const { interval = 15, foreground = false } = options;
+    const { interval = 15, foreground = false, staggerIndex = 0 } = options;
+    const staggerSeconds = staggerIndex * STAGGER_STEP_SECONDS;
 
     ensureDirs();
 
@@ -112,9 +117,11 @@ function startScraper(topic, options = {}) {
     const logFile = getLogFilePath(topic);
     const runnerPath = path.join(__dirname, '../../scraper/runner.js');
 
+    const runnerArgs = ['--topic', topic, '--interval', String(interval), '--stagger', String(staggerSeconds)];
+
     if (foreground) {
         // Run in foreground - attach stdio
-        const child = spawn('node', [runnerPath, '--topic', topic, '--interval', String(interval)], {
+        const child = spawn('node', [runnerPath, ...runnerArgs], {
             stdio: 'inherit',
             env: { ...process.env },
         });
@@ -125,7 +132,7 @@ function startScraper(topic, options = {}) {
     const out = fs.openSync(logFile, 'a');
     const err = fs.openSync(logFile, 'a');
 
-    const child = spawn('node', [runnerPath, '--topic', topic, '--interval', String(interval)], {
+    const child = spawn('node', [runnerPath, ...runnerArgs], {
         detached: true,
         stdio: ['ignore', out, err],
         env: { ...process.env },
