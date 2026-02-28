@@ -16,8 +16,9 @@ async function startCommand(topic, options) {
             return;
         }
 
-        console.log(`Starting ${projects.length} scraper(s)...\n`);
+        console.log(`Starting ${projects.length} scraper(s) (staggered by 3 min each)...\n`);
 
+        let staggerIndex = 0;
         for (const project of projects) {
             try {
                 if (isRunning(project.topic)) {
@@ -26,8 +27,10 @@ async function startCommand(topic, options) {
                     continue;
                 }
 
-                const pid = startScraper(project.topic, { interval, foreground: false });
-                console.log(`  [ok]   "${project.topic}" started (PID: ${pid})`);
+                const pid = startScraper(project.topic, { interval, foreground: false, staggerIndex });
+                const delaySec = staggerIndex * 180;
+                console.log(`  [ok]   "${project.topic}" started (PID: ${pid}${delaySec > 0 ? `, stagger: ${delaySec}s` : ''})`);
+                staggerIndex++;
             } catch (error) {
                 console.error(`  [fail] "${project.topic}": ${error.message}`);
             }

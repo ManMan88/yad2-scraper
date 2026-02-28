@@ -10,12 +10,14 @@ const { scrapeByTopic } = require('./index');
 const { getProject } = require('../config/loader');
 const { closeBrowser } = require('./fetcher');
 const { sendMessage } = require('./notifier');
+const { waitForThrottle, recordRequest, signalCaptcha, clearCaptchaCooldown } = require('./requestThrottle');
 
 const program = new Command();
 
 program
     .option('--topic <topic>', 'Topic to scrape (required)')
     .option('--interval <minutes>', 'Interval between scrapes in minutes', '20')
+    .option('--stagger <seconds>', 'Initial stagger delay in seconds', '0')
     .parse();
 
 const options = program.opts();
@@ -88,12 +90,22 @@ function scheduleNext(overrideMs) {
 async function runScrape() {
     if (isShuttingDown) return;
 
+    // Wait for global throttle (minimum gap between requests + captcha cooldown)
+    await waitForThrottle(intervalMs, log);
+    if (isShuttingDown) return;
+
+    // Record that we're about to make a request
+    recordRequest();
+
     log(`Scraping: ${topic}`);
 
     try {
         const result = await scrapeByTopic(topic);
 
         if (result.success) {
+            // Successful scrape — clear any lingering captcha cooldown
+            clearCaptchaCooldown();
+
             log(`Completed: ${result.newItems.length} new items (${result.total} total)`);
 
             if (result.newItems.length > 0) {
@@ -120,13 +132,11 @@ async function runScrape() {
     } catch (error) {
         log(`Error: ${error.message}`);
 
-        // On captcha/bot detection, restart browser and apply extra cooldown
+        // On captcha/bot detection, restart browser and signal ALL scrapers to back off
         if (error.message && error.message.includes('ShieldSquare Captcha')) {
             log('Bot detection triggered - restarting browser for clean fingerprint');
             await closeBrowser();
-            const cooldownMs = intervalMs * 2;
-            log(`Applying captcha cooldown (2x interval)`);
-            return cooldownMs;
+            signalCaptcha(intervalMs);
         }
     }
 }
@@ -175,13 +185,13 @@ async function main() {
     log(`URL: ${project.url}`);
     log('---');
 
-    // Add random initial delay (0-5 minutes) so multiple scrapers
-    // started at the same time don't all hit Yad2 simultaneously
-    const initialDelayMs = Math.random() * 5 * 60 * 1000;
-    const initialDelaySec = Math.round(initialDelayMs / 1000);
-    if (initialDelaySec > 0) {
-        log(`Staggering start by ${initialDelaySec}s to avoid simultaneous requests`);
-        await new Promise(resolve => setTimeout(resolve, initialDelayMs));
+    // Deterministic stagger: when starting multiple scrapers, each gets a
+    // different --stagger value (index * 180s) so they spread out reliably.
+    const staggerMs = parseInt(options.stagger, 10) * 1000;
+    if (staggerMs > 0) {
+        const staggerSec = Math.round(staggerMs / 1000);
+        log(`Staggering start by ${staggerSec}s to avoid simultaneous requests`);
+        await new Promise(resolve => setTimeout(resolve, staggerMs));
     }
 
     // Run first scrape

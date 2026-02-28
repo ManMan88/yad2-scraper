@@ -10,11 +10,21 @@ let browser = null;
 let browserUseCount = 0;
 const MAX_BROWSER_USES = 8; // Restart browser every N scrapes (higher = more session history like a real user)
 
-// Pool of realistic User-Agent strings (Linux Chrome matching installed browser)
+// Pool of realistic User-Agent strings across platforms (Windows/macOS/Linux)
+// Each entry includes the platform for matching sec-ch-ua-platform header
 const USER_AGENTS = [
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+    // Windows Chrome
+    { ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', platform: 'Windows' },
+    { ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36', platform: 'Windows' },
+    { ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36', platform: 'Windows' },
+    // macOS Chrome
+    { ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', platform: 'macOS' },
+    { ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36', platform: 'macOS' },
+    { ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36', platform: 'macOS' },
+    // Linux Chrome
+    { ua: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', platform: 'Linux' },
+    { ua: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36', platform: 'Linux' },
+    { ua: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36', platform: 'Linux' },
 ];
 
 // Realistic viewport sizes (common desktop resolutions)
@@ -161,20 +171,20 @@ async function getYad2ResponsePuppeteer(url) {
                 deviceScaleFactor: Math.random() > 0.5 ? 2 : 1,
             });
 
-            // Set a rotated User-Agent
-            const userAgent = randomItem(USER_AGENTS);
-            await page.setUserAgent(userAgent);
+            // Set a rotated User-Agent (with matching platform)
+            const agentInfo = randomItem(USER_AGENTS);
+            await page.setUserAgent(agentInfo.ua);
 
             // Build Client Hints headers that match the selected User-Agent
-            const chromeMatch = userAgent.match(/Chrome\/([\d]+)/);
-            const majorVersion = chromeMatch ? chromeMatch[1] : '144';
+            const chromeMatch = agentInfo.ua.match(/Chrome\/([\d]+)/);
+            const majorVersion = chromeMatch ? chromeMatch[1] : '131';
 
             await page.setExtraHTTPHeaders({
                 'Accept-Language': 'he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                 'sec-ch-ua': `"Chromium";v="${majorVersion}", "Google Chrome";v="${majorVersion}", "Not-A.Brand";v="99"`,
                 'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Linux"',
+                'sec-ch-ua-platform': `"${agentInfo.platform}"`,
             });
 
             // Note: navigator.webdriver, navigator.plugins, and navigator.languages
@@ -241,7 +251,7 @@ async function fetchWithRetry(url, options = {}) {
                 method: 'GET',
                 redirect: 'follow',
                 headers: {
-                    'User-Agent': randomItem(USER_AGENTS),
+                    'User-Agent': randomItem(USER_AGENTS).ua,
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.5',
                 },
