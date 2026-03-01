@@ -10,9 +10,9 @@ The scraper will scan Yad2 and will find for you the relevant items. Once a new 
 ## Features
 
 - **Bot Management CLI** - Start, stop, and manage scrapers from the command line
-- **Puppeteer with Stealth** - Bypasses bot detection using headless Chrome
-- **Background Process Management** - Run scrapers as background daemons
-- **Telegram Notifications** - Get notified when new items are found
+- **Puppeteer with Stealth** - Bypasses bot detection using headless Chrome with UA rotation, human behavior simulation, and cross-process request throttling
+- **Background Process Management** - Run scrapers as background daemons with interval jitter and staggered starts
+- **Telegram Notifications** - Get notified when new items are found (suppresses duplicates, sends 6-hour "still watching" alerts)
 - **GitHub Actions Support** - Automated scraping via CI/CD
 
 ---
@@ -97,7 +97,7 @@ yad2 add --topic "Tel Aviv 3 rooms" --url "https://..."
 ### 4. Start Scraping
 
 ```bash
-# Start in background (runs every 15 minutes)
+# Start in background (runs every 20 minutes)
 yad2 start "Tel Aviv 3 rooms"
 
 # Or start all enabled scrapers
@@ -111,7 +111,7 @@ yad2 logs "Tel Aviv 3 rooms" -f
 
 ## GitHub Actions
 
-The scraper can run automatically via GitHub Actions (every 15 minutes, 08:00-20:00).
+The scraper can run automatically via GitHub Actions (every 20 minutes, 08:00-20:00).
 
 Add these secrets to your repository:
 - `API_TOKEN` - Telegram bot API token
@@ -155,11 +155,12 @@ yad2-scraper/
 │   ├── cli/              # CLI commands
 │   │   ├── index.js      # Main CLI entry point
 │   │   └── commands/     # Individual command handlers
-│   ├── scraper/          # Scraping logic
-│   │   ├── fetcher.js    # Puppeteer-based page fetching
-│   │   ├── parser.js     # HTML parsing
-│   │   ├── notifier.js   # Telegram notifications
-│   │   └── storage.js    # Data persistence
+│   ├── scraper/              # Scraping logic
+│   │   ├── fetcher.js        # Puppeteer-based page fetching with stealth
+│   │   ├── parser.js         # HTML parsing
+│   │   ├── notifier.js       # Telegram notifications
+│   │   ├── requestThrottle.js # Cross-process request coordination
+│   │   └── storage.js        # Data persistence (with history to prevent re-notifications)
 │   └── config/           # Configuration management
 ├── data/                 # Scraped data (JSON files)
 ├── logs/                 # Scraper log files
